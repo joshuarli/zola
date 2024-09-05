@@ -77,10 +77,6 @@ pub enum Command {
         #[clap(long)]
         drafts: bool,
 
-        /// Open site in the default browser
-        #[clap(short = 'O', long)]
-        open: bool,
-
         /// Only rebuild the minimum on change - useful when working on a specific page/section
         #[clap(short = 'f', long)]
         fast: bool,

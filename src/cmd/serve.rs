@@ -364,7 +364,6 @@ pub fn serve(
     force: bool,
     base_url: Option<&str>,
     config_file: &Path,
-    open: bool,
     include_drafts: bool,
     fast_rebuild: bool,
     no_port_append: bool,

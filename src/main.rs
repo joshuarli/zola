@@ -83,7 +83,6 @@ fn main() {
             force,
             base_url,
             drafts,
-            open,
             fast,
             no_port_append,
         } => {
@@ -109,7 +108,6 @@ fn main() {
                 force,
                 base_url.as_deref(),
                 &config_file,
-                open,
                 drafts,
                 fast,
                 no_port_append,
