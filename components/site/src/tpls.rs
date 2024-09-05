@@ -36,14 +36,6 @@ pub fn register_early_global_fns(site: &mut Site) -> TeraResult<()> {
             site.output_path.clone(),
         ),
     );
-    site.tera.register_function(
-        "load_data",
-        global_fns::LoadData::new(
-            site.base_path.clone(),
-            site.config.theme.clone(),
-            site.output_path.clone(),
-        ),
-    );
     site.tera.register_function("trans", global_fns::Trans::new(site.config.clone()));
     site.tera.register_function(
         "get_taxonomy_url",
