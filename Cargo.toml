@@ -44,11 +44,6 @@ libs = { path = "components/libs" }
 [dev-dependencies]
 same-file = "1"
 
-[features]
-default = []
-indexing-zh = ["libs/indexing-zh"]
-indexing-ja = ["libs/indexing-ja"]
-
 [workspace]
 members = ["components/*"]
 

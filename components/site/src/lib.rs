@@ -735,9 +735,6 @@ impl Site {
         let path = &self.output_path.join(self.config.search.index_format.filename(lang));
         let library = self.library.read().unwrap();
         let content = match &self.config.search.index_format {
-            IndexFormat::ElasticlunrJavascript | IndexFormat::ElasticlunrJson => {
-                search::build_elasticlunr(lang, &library, &self.config)?
-            }
             IndexFormat::FuseJson | IndexFormat::FuseJavascript => {
                 search::build_fuse(lang, &library, &self.config.search)?
             }
@@ -746,8 +743,8 @@ impl Site {
         create_file(
             path,
             match self.config.search.index_format {
-                IndexFormat::ElasticlunrJson | IndexFormat::FuseJson => content,
-                IndexFormat::ElasticlunrJavascript | IndexFormat::FuseJavascript => {
+                IndexFormat::FuseJson => content,
+                IndexFormat::FuseJavascript => {
                     format!("window.searchIndex = {}", content)
                 }
             },
@@ -765,14 +762,6 @@ impl Site {
             if code != &self.config.default_language && language.build_search_index {
                 self.index_for_lang(code)?;
             }
-        }
-
-        match self.config.search.index_format {
-            IndexFormat::ElasticlunrJavascript | IndexFormat::ElasticlunrJson => {
-                // then elasticlunr.min.js
-                create_file(&self.output_path.join("elasticlunr.min.js"), search::ELASTICLUNR_JS)?;
-            }
-            _ => {}
         }
 
         Ok(())

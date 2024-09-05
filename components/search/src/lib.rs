@@ -1,11 +1,9 @@
-mod elasticlunr;
 mod fuse;
 
 use libs::ammonia;
 use libs::once_cell::sync::Lazy;
 use std::collections::{HashMap, HashSet};
 
-pub use elasticlunr::{build_index as build_elasticlunr, ELASTICLUNR_JS};
 pub use fuse::build_index as build_fuse;
 
 static AMMONIA: Lazy<ammonia::Builder<'static>> = Lazy::new(|| {

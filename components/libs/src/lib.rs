@@ -9,7 +9,6 @@ pub use ammonia;
 pub use atty;
 pub use base64;
 pub use csv;
-pub use elasticlunr;
 pub use filetime;
 pub use gh_emoji;
 pub use glob;

@@ -698,7 +698,6 @@ fn can_build_search_index() {
     });
 
     assert!(Path::new(&public).exists());
-    assert!(file_exists!(public, "elasticlunr.min.js"));
     assert!(file_exists!(public, "search_index.en.js"));
 }
 

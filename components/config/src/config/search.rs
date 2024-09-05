@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum IndexFormat {
-    ElasticlunrJson,
     #[default]
-    ElasticlunrJavascript,
     FuseJson,
     FuseJavascript,
 }
@@ -15,8 +13,8 @@ impl IndexFormat {
     /// file extension which ought to be used for this index format.
     fn extension(&self) -> &'static str {
         match *self {
-            IndexFormat::ElasticlunrJavascript | IndexFormat::FuseJavascript => "js",
-            IndexFormat::ElasticlunrJson | IndexFormat::FuseJson => "json",
+            IndexFormat::FuseJavascript => "js",
+            IndexFormat::FuseJson => "json",
         }
     }
 
@@ -43,7 +41,7 @@ pub struct Search {
     pub include_date: bool,
     /// Include the path of the page in the search index. `false` by default.
     pub include_path: bool,
-    /// Foramt of the search index to be produced. 'elasticlunr_javascript' by default.
+    /// Foramt of the search index to be produced.
     pub index_format: IndexFormat,
 }
 
