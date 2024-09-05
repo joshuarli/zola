@@ -2,7 +2,6 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
-use clap_complete::Shell;
 
 #[derive(Parser)]
 #[clap(version, author, about)]
@@ -89,12 +88,5 @@ pub enum Command {
         /// Default append port to the base url.
         #[clap(long)]
         no_port_append: bool,
-    },
-
-    /// Generate shell completion
-    Completion {
-        /// Shell to generate completion for
-        #[clap(value_enum)]
-        shell: Shell,
     },
 }

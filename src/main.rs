@@ -5,7 +5,7 @@ use cli::{Cli, Command};
 use errors::anyhow;
 use utils::net::{get_available_port, port_is_available};
 
-use clap::{CommandFactory, Parser};
+use clap::Parser;
 use time::UtcOffset;
 
 mod cli;
@@ -118,10 +118,6 @@ fn main() {
                 messages::unravel_errors("Failed to serve the site", &e);
                 std::process::exit(1);
             }
-        }
-        Command::Completion { shell } => {
-            let cmd = &mut Cli::command();
-            clap_complete::generate(shell, cmd, cmd.get_name().to_string(), &mut std::io::stdout());
         }
     }
 }
