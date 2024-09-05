@@ -31,6 +31,9 @@ use std::thread;
 use std::io::Cursor;
 use std::time::{Duration, Instant};
 
+use tungstenite::accept;
+use tungstenite::connect;
+
 use mime_guess::from_path as mimetype_from_path;
 use time::macros::format_description;
 use time::{OffsetDateTime, UtcOffset};
@@ -41,7 +44,6 @@ use libs::percent_encoding;
 use libs::relative_path::RelativePathBuf;
 use libs::serde_json;
 use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, notify::Watcher};
-use ws::{Message, Sender, WebSocket};
 
 use errors::{anyhow, Context, Error, Result};
 use site::sass::compile_sass;
@@ -235,12 +237,12 @@ fn not_found() -> Response<Body> {
 }
 */
 
-fn rebuild_done_handling(broadcaster: &Sender, res: Result<()>, reload_path: &str) {
+fn rebuild_done_handling(ws: &mut tungstenite::protocol::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>, res: Result<()>, reload_path: &str) {
     match res {
         Ok(_) => {
             clear_serve_error();
-            broadcaster
-                .send(format!(
+            ws
+                .send(tungstenite::protocol::Message::Text(format!(
                     r#"
                 {{
                     "command": "reload",
@@ -251,7 +253,7 @@ fn rebuild_done_handling(broadcaster: &Sender, res: Result<()>, reload_path: &st
                     "protocol": ["http://livereload.com/protocols/official-7"]
                 }}"#,
                     serde_json::to_string(&reload_path).unwrap()
-                ))
+                )))
                 .unwrap();
         }
         Err(e) => {
@@ -445,46 +447,30 @@ pub fn serve(
     // static_root needs to be canonicalized because we do the same for the http server.
     let static_root = std::fs::canonicalize(&output_path).unwrap();
 
-    let broadcaster = {
-        thread::spawn(move || {
-            let server = Server::http(bind_address).unwrap();
-            println!("listening: {:?}", bind_address);
-            for request in server.incoming_requests() {
-                handle_request(request, static_root.clone(), base_path.clone());
-            }
-        });
+    thread::spawn(move || {
+        let server = Server::http(bind_address).unwrap();
+        println!("listening: {:?}", bind_address);
+        for request in server.incoming_requests() {
+            handle_request(request, static_root.clone(), base_path.clone());
+        }
+    });
 
-        // The websocket for livereload
-        let ws_server = WebSocket::new(|output: Sender| {
-            move |msg: Message| {
-                if msg.into_text().unwrap().contains("\"hello\"") {
-                    return output.send(Message::text(
-                        r#"
-                        {
-                            "command": "hello",
-                            "protocols": [ "http://livereload.com/protocols/official-7" ],
-                            "serverName": "Zola"
-                        }
-                    "#,
-                    ));
+    let server = TcpListener::bind(&*ws_address).map_err(|_| anyhow!("Cannot bind to address {} for the websocket server. Maybe the port is already in use?", &ws_address))?;
+
+    for stream in server.incoming() {
+        thread::spawn(move || {
+            let mut websocket = accept(stream.unwrap()).unwrap();
+
+            loop {
+                let msg = websocket.read().unwrap();
+                if msg.is_text() || msg.is_binary() {
+                    websocket.send(msg).unwrap();
                 }
-                Ok(())
             }
-        })
-        .unwrap();
-
-        let broadcaster = ws_server.broadcaster();
-
-        let ws_server = ws_server
-            .bind(&*ws_address)
-            .map_err(|_| anyhow!("Cannot bind to address {} for the websocket server. Maybe the port is already in use?", &ws_address))?;
-
-        thread::spawn(move || {
-            ws_server.run().unwrap();
         });
+    }
 
-        broadcaster
-    };
+    let (mut broadcaster, response) = connect(format!("ws://localhost:{}/socket", ws_port.unwrap())).expect("Can't connect");
 
     // We watch for changes in the config by monitoring its parent directory, but we ignore all
     // ordinary peer files. Map the parent directory back to the config file name to not confuse
@@ -517,7 +503,7 @@ pub fn serve(
         let msg = format!("-> Sass file(s) changed {}", combined_paths);
         console::info(&msg);
         rebuild_done_handling(
-            &broadcaster,
+            &mut broadcaster,
             compile_sass(&site.base_path, &site.output_path),
             &site.sass_path.to_string_lossy(),
         );
@@ -525,7 +511,7 @@ pub fn serve(
 
     let reload_templates = |site: &mut Site| {
         rebuild_done_handling(
-            &broadcaster,
+            &mut broadcaster,
             site.reload_templates(),
             &site.templates_path.to_string_lossy(),
         );
@@ -552,13 +538,13 @@ pub fn serve(
         console::info(&msg);
         if path.is_dir() {
             rebuild_done_handling(
-                &broadcaster,
+                &mut broadcaster,
                 site.copy_static_directories(),
                 &path.to_string_lossy(),
             );
         } else {
             rebuild_done_handling(
-                &broadcaster,
+                &mut broadcaster,
                 copy_file(path, &site.output_path, &site.static_path, site.config.hard_link_static),
                 &partial_path.to_string_lossy(),
             );
@@ -579,7 +565,7 @@ pub fn serve(
     ) {
         Ok((s, _, _)) => {
             clear_serve_error();
-            rebuild_done_handling(&broadcaster, Ok(()), "/x.js");
+            rebuild_done_handling(&mut broadcaster, Ok(()), "/x.js");
 
             Some(s)
         }
@@ -651,7 +637,7 @@ pub fn serve(
                                             }
                                         } else {
                                             rebuild_done_handling(
-                                                &broadcaster,
+                                                &mut broadcaster,
                                                 res,
                                                 &full_path.to_string_lossy(),
                                             );
