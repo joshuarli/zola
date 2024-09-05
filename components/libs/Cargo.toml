@@ -47,9 +47,6 @@ webp = "0.3"
 
 
 [features]
-# TODO: fix me, it doesn't pick up the reqwuest feature if not set as default
-default = ["rust-tls"]
-rust-tls = ["reqwest/rustls-tls"]
-native-tls = ["reqwest/default-tls"]
+default = []
 indexing-zh = ["elasticlunr-rs/zh"]
 indexing-ja = ["elasticlunr-rs/ja"]
