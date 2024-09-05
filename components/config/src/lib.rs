@@ -1,5 +1,4 @@
 mod config;
-pub mod highlighting;
 mod theme;
 
 use std::path::Path;

@@ -697,8 +697,6 @@ impl Site {
             self.render_feeds(pages, Some(&PathBuf::from(code)), code, |c| c)?;
             start = log_time(start, "Generated feed in other language");
         }
-        self.render_themes_css()?;
-        start = log_time(start, "Rendered themes css");
         self.render_404()?;
         start = log_time(start, "Rendered 404");
         if self.config.generate_robots_txt {
@@ -709,24 +707,6 @@ impl Site {
         start = log_time(start, "Rendered taxonomies");
         self.copy_static_directories()?;
         log_time(start, "Copied static dir");
-
-        Ok(())
-    }
-
-    pub fn render_themes_css(&self) -> Result<()> {
-        let themes = &self.config.markdown.highlight_themes_css;
-
-        if !themes.is_empty() {
-            create_directory(&self.static_path)?;
-        }
-
-        for t in themes {
-            let p = self.static_path.join(&t.filename);
-            if !p.exists() {
-                let content = &self.config.markdown.export_theme_css(&t.theme)?;
-                create_file(&p, content)?;
-            }
-        }
 
         Ok(())
     }

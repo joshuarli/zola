@@ -3,7 +3,6 @@ use std::fmt::Write;
 
 use crate::markdown::cmark::CowStr;
 use errors::bail;
-use libs::gh_emoji::Replacer as EmojiReplacer;
 use libs::once_cell::sync::Lazy;
 use libs::pulldown_cmark as cmark;
 use libs::pulldown_cmark_escape as cmark_escape;
@@ -20,12 +19,10 @@ use utils::table_of_contents::{make_table_of_contents, Heading};
 use utils::types::InsertAnchor;
 
 use self::cmark::{Event, LinkType, Options, Parser, Tag, TagEnd};
-use crate::codeblock::{CodeBlock, FenceSettings};
 use crate::shortcode::{Shortcode, SHORTCODE_PLACEHOLDER};
 
 const CONTINUE_READING: &str = "<span id=\"continue-reading\"></span>";
 const ANCHOR_LINK_TEMPLATE: &str = "anchor-link.html";
-static EMOJI_REPLACER: Lazy<EmojiReplacer> = Lazy::new(EmojiReplacer::new);
 
 /// Set as a regex to help match some extra cases. This way, spaces and case don't matter.
 static MORE_DIVIDER_RE: Lazy<Regex> = Lazy::new(|| {
@@ -408,7 +405,6 @@ pub fn markdown_to_html(
     // Set while parsing
     let mut error = None;
 
-    let mut code_block: Option<CodeBlock> = None;
     // Indicates whether we're in the middle of parsing a text node which will be placed in an HTML
     // attribute, and which hence has to be escaped using escape_html rather than push_html's
     // default HTML body escaping for text nodes.
@@ -503,71 +499,18 @@ pub fn markdown_to_html(
         for (event, mut range) in Parser::new_ext(content, opts).into_offset_iter() {
             match event {
                 Event::Text(text) => {
-                    if let Some(ref mut _code_block) = code_block {
-                        if contains_shortcode(text.as_ref()) {
-                            // mark the start of the code block events
-                            let stack_start = events.len();
-                            render_shortcodes!(true, text, range);
-                            // after rendering the shortcodes we will collect all the text events
-                            // and re-render them as code blocks
-                            for event in events[stack_start..].iter() {
-                                match event {
-                                    Event::Html(t) | Event::Text(t) => accumulated_block += t,
-                                    _ => {
-                                        error = Some(Error::msg(format!(
-                                            "Unexpected event while expanding the code block: {:?}",
-                                            event
-                                        )));
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // remove all the original events from shortcode rendering
-                            events.truncate(stack_start);
+                    if !contains_shortcode(text.as_ref()) {
+                        if inside_attribute {
+                            let mut buffer = "".to_string();
+                            escape_html(&mut buffer, text.as_ref()).unwrap();
+                            events.push(Event::Html(buffer.into()));
                         } else {
-                            accumulated_block += &text;
+                            events.push(Event::Text(text));
                         }
-                    } else {
-                        let text = if context.config.markdown.render_emoji {
-                            EMOJI_REPLACER.replace_all(&text).to_string().into()
-                        } else {
-                            text
-                        };
-
-                        if !contains_shortcode(text.as_ref()) {
-                            if inside_attribute {
-                                let mut buffer = "".to_string();
-                                escape_html(&mut buffer, text.as_ref()).unwrap();
-                                events.push(Event::Html(buffer.into()));
-                            } else {
-                                events.push(Event::Text(text));
-                            }
-                            continue;
-                        }
-
-                        render_shortcodes!(true, text, range);
-                    }
-                }
-                Event::Start(Tag::CodeBlock(ref kind)) => {
-                    let fence = match kind {
-                        cmark::CodeBlockKind::Fenced(fence_info) => FenceSettings::new(fence_info),
-                        _ => FenceSettings::new(""),
-                    };
-                    let (block, begin) = CodeBlock::new(fence, context.config, path);
-                    code_block = Some(block);
-                    events.push(Event::Html(begin.into()));
-                }
-                Event::End(TagEnd::CodeBlock { .. }) => {
-                    if let Some(ref mut code_block) = code_block {
-                        let html = code_block.highlight(&accumulated_block);
-                        events.push(Event::Html(html.into()));
-                        accumulated_block.clear();
+                        continue;
                     }
 
-                    // reset highlight and close the code block
-                    code_block = None;
-                    events.push(Event::Html("</code></pre>\n".into()));
+                    render_shortcodes!(true, text, range);
                 }
                 Event::Start(Tag::Image { link_type, dest_url, title, id }) => {
                     let link = if is_colocated_asset_link(&dest_url) {
