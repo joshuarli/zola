@@ -21,26 +21,24 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+use std::fs;
 use std::cell::Cell;
-use std::future::IntoFuture;
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::path::{Path, PathBuf, MAIN_SEPARATOR};
 use std::sync::mpsc::channel;
 use std::sync::Mutex;
 use std::thread;
+use std::io::Cursor;
 use std::time::{Duration, Instant};
 
-use hyper::http::HeaderValue;
-use hyper::server::Server;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{body, header};
-use hyper::{Body, Method, Request, Response, StatusCode};
 use mime_guess::from_path as mimetype_from_path;
 use time::macros::format_description;
 use time::{OffsetDateTime, UtcOffset};
 
+use tiny_http::{Server, Response, Request, Method, StatusCode, Header};
+
 use libs::percent_encoding;
-use libs::relative_path::{RelativePath, RelativePathBuf};
+use libs::relative_path::RelativePathBuf;
 use libs::serde_json;
 use notify_debouncer_full::{new_debouncer, notify::RecursiveMode, notify::Watcher};
 use ws::{Message, Sender, WebSocket};
@@ -61,9 +59,6 @@ enum WatchMode {
     Condition(bool),
 }
 
-static METHOD_NOT_ALLOWED_TEXT: &[u8] = b"Method Not Allowed";
-static NOT_FOUND_TEXT: &[u8] = b"Not Found";
-
 // This is dist/livereload.min.js from the LiveReload.js v3.2.4 release
 const LIVE_RELOAD: &str = include_str!("livereload.js");
 
@@ -80,14 +75,15 @@ fn set_serve_error(msg: &'static str, e: errors::Error) {
     }
 }
 
-async fn handle_request(
-    req: Request<Body>,
+fn handle_request(
+    req: Request,
     mut root: PathBuf,
     base_path: String,
-) -> Result<Response<Body>> {
-    let path_str = req.uri().path();
+) {
+    let path_str = req.url();
     if !path_str.starts_with(&base_path) {
-        return Ok(not_found());
+        req.respond(Response::empty(StatusCode(404)));
+        return;
     }
 
     let trimmed_path = &path_str[base_path.len() - 1..];
@@ -97,7 +93,10 @@ async fn handle_request(
     // https://zola.discourse.group/t/percent-encoding-for-slugs/736
     let decoded = match percent_encoding::percent_decode_str(trimmed_path).decode_utf8() {
         Ok(d) => d,
-        Err(_) => return Ok(not_found()),
+        Err(_) => {
+            req.respond(Response::empty(StatusCode(404)));
+            return;
+        }
     };
 
     let decoded_path = if base_path != "/" && decoded.starts_with(&base_path) {
@@ -113,27 +112,55 @@ async fn handle_request(
 
     // livereload.js is served using the LIVE_RELOAD str, not a file
     if path == "livereload.js" {
-        if req.method() == Method::GET {
-            return Ok(livereload_js());
-        } else {
-            return Ok(method_not_allowed());
+        if *req.method() == Method::Get {
+            req.respond(
+                Response::from_string(LIVE_RELOAD)
+                .with_header(Header::from_bytes(&b"Content-Type"[..], &b"text/javascript"[..]).unwrap())
+                .with_status_code(200)
+            ).expect("Could not send livereload.js response");
+            return;
         }
+        req.respond(Response::empty(StatusCode(405)));
+        return;
     }
 
     if let Some(content) = SITE_CONTENT.read().unwrap().get(&path) {
-        return Ok(in_memory_content(&path, content));
+        let content_type = match path.extension() {
+            Some(ext) => match ext {
+                "xml" => "text/xml",
+                "json" => "application/json",
+                _ => "text/html",
+            },
+            None => "text/html",
+        };
+        req.respond(
+            Response::new(
+                StatusCode(200),
+                vec![Header::from_bytes("Content-Type", content_type).unwrap()],
+                Cursor::new(content.to_owned()),
+                Some(content.len()),
+                None,
+            )
+        ).expect("Could not send in-memory response");
+        return;
     }
 
     // Handle only `GET`/`HEAD` requests
     match *req.method() {
-        Method::HEAD | Method::GET => {}
-        _ => return Ok(method_not_allowed()),
+        Method::Head | Method::Get => {}
+        _ => {
+            req.respond(Response::empty(StatusCode(405)));
+            return;
+        }
     }
 
     // Handle only simple path requests
-    if req.uri().scheme_str().is_some() || req.uri().host().is_some() {
-        return Ok(not_found());
+    /*
+    if req.url().scheme_str().is_some() || req.url().host().is_some() {
+        req.respond(Response::empty(StatusCode(404)));
+        return;
     }
+    */
 
     // Remove the first slash from the request path
     // otherwise `PathBuf` will interpret it as an absolute path
@@ -142,18 +169,25 @@ async fn handle_request(
     // Resolve the root + user supplied path into the absolute path
     // this should hopefully remove any path traversals
     // if we fail to resolve path, we should return 404
-    root = match tokio::fs::canonicalize(&root).await {
+    root = match fs::canonicalize(&root) {
         Ok(d) => d,
-        Err(_) => return Ok(not_found()),
+        Err(_) => {
+            req.respond(Response::empty(StatusCode(404)));
+            return;
+        }
     };
 
     // Ensure we are only looking for things in our public folder
     if !root.starts_with(original_root) {
-        return Ok(not_found());
+        req.respond(Response::empty(StatusCode(404)));
+        return;
     }
 
-    let metadata = match tokio::fs::metadata(root.as_path()).await {
-        Err(err) => return Ok(io_error(err)),
+    let metadata = match fs::metadata(root.as_path()) {
+        Err(err) => {
+            req.respond(Response::empty(StatusCode(500)));
+            return;
+        },
         Ok(metadata) => metadata,
     };
     if metadata.is_dir() {
@@ -161,121 +195,25 @@ async fn handle_request(
         root.push("index.html");
     };
 
-    let result = tokio::fs::read(&root).await;
+    let result = fs::read(&root);
 
     let contents = match result {
-        Err(err) => return Ok(io_error(err)),
+        Err(err) => {
+            req.respond(Response::empty(StatusCode(500)));
+            return;
+        }
         Ok(contents) => contents,
     };
 
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(
-            header::CONTENT_TYPE,
-            mimetype_from_path(&root).first_or_octet_stream().essence_str(),
-        )
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-        .body(Body::from(contents))
-        .unwrap())
+    let response = Response::from_data(contents)
+        .with_status_code(200)
+        .with_header(Header::from_bytes(&b"Content-Type"[..], mimetype_from_path(&root).first_or_octet_stream().essence_str().as_bytes()).unwrap())
+        .with_header(Header::from_bytes(&b"Access-Control-Allow-Origin"[..], b"*").unwrap());
+
+    req.respond(response).expect("failed to respond lol");
 }
 
-/// Inserts build error message boxes into HTML responses when needed.
-async fn response_error_injector(
-    req: impl IntoFuture<Output = Result<Response<Body>>>,
-) -> Result<Response<Body>> {
-    let req = req.await;
-
-    // return req as-is if the request is Err(), not HTML, or if there are no error messages.
-    if req
-        .as_ref()
-        .map(|req| {
-            req.headers()
-                .get(header::CONTENT_TYPE)
-                .map(|val| val != HeaderValue::from_static("text/html"))
-                .unwrap_or(true)
-        })
-        .unwrap_or(true)
-        || SERVE_ERROR.lock().unwrap().get_mut().is_none()
-    {
-        return req;
-    }
-
-    let mut req = req.unwrap();
-    let mut bytes = body::to_bytes(req.body_mut()).await.unwrap().to_vec();
-
-    if let Some((msg, error)) = SERVE_ERROR.lock().unwrap().get_mut() {
-        // Generate an error message similar to the CLI version in messages::unravel_errors.
-        let mut error_str = String::new();
-
-        if !msg.is_empty() {
-            error_str.push_str(&format!("Error: {msg}\n"));
-        }
-
-        error_str.push_str(&format!("Error: {error}\n"));
-
-        let mut cause = error.source();
-        while let Some(e) = cause {
-            error_str.push_str(&format!("Reason: {}\n", e));
-            cause = e.source();
-        }
-
-        // Push the error message (wrapped in an HTML dialog box) to the end of the HTML body.
-        //
-        // The message will be outside of <html> and <body> but web browsers are flexible enough
-        // that they will move it to the end of <body> at page load.
-        let html_error = format!(
-            r#"<div style="all:revert;position:fixed;display:flex;align-items:center;justify-content:center;background-color:rgb(0,0,0,0.5);top:0;right:0;bottom:0;left:0;"><div style="background-color:white;padding:0.5rem;border-radius:0.375rem;filter:drop-shadow(0,25px,25px,rgb(0,0,0/0.15));overflow-x:auto;"><p style="font-weight:700;color:black;font-size:1.25rem;margin:0;margin-bottom:0.5rem;">Zola Build Error:</p><pre style="padding:0.5rem;margin:0;border-radius:0.375rem;background-color:#363636;color:#CE4A2F;font-weight:700;">{error_str}</pre></div></div>"#
-        );
-        bytes.extend(html_error.as_bytes());
-
-        *req.body_mut() = Body::from(bytes);
-    }
-
-    Ok(req)
-}
-
-fn livereload_js() -> Response<Body> {
-    Response::builder()
-        .header(header::CONTENT_TYPE, "text/javascript")
-        .status(StatusCode::OK)
-        .body(LIVE_RELOAD.into())
-        .expect("Could not build livereload.js response")
-}
-
-fn in_memory_content(path: &RelativePathBuf, content: &str) -> Response<Body> {
-    let content_type = match path.extension() {
-        Some(ext) => match ext {
-            "xml" => "text/xml",
-            "json" => "application/json",
-            _ => "text/html",
-        },
-        None => "text/html",
-    };
-    Response::builder()
-        .header(header::CONTENT_TYPE, content_type)
-        .status(StatusCode::OK)
-        .body(content.to_owned().into())
-        .expect("Could not build HTML response")
-}
-
-fn method_not_allowed() -> Response<Body> {
-    Response::builder()
-        .header(header::CONTENT_TYPE, "text/plain")
-        .status(StatusCode::METHOD_NOT_ALLOWED)
-        .body(METHOD_NOT_ALLOWED_TEXT.into())
-        .expect("Could not build Method Not Allowed response")
-}
-
-fn io_error(err: std::io::Error) -> Response<Body> {
-    match err.kind() {
-        std::io::ErrorKind::NotFound => not_found(),
-        std::io::ErrorKind::PermissionDenied => {
-            Response::builder().status(StatusCode::FORBIDDEN).body(Body::empty()).unwrap()
-        }
-        _ => panic!("{}", err),
-    }
-}
-
+/*
 fn not_found() -> Response<Body> {
     let not_found_path = RelativePath::new("404.html");
     let content = SITE_CONTENT.read().unwrap().get(not_found_path).cloned();
@@ -295,6 +233,7 @@ fn not_found() -> Response<Body> {
         .body(NOT_FOUND_TEXT.into())
         .expect("Could not build Not Found response")
 }
+*/
 
 fn rebuild_done_handling(broadcaster: &Sender, res: Result<()>, reload_path: &str) {
     match res {
@@ -509,41 +448,11 @@ pub fn serve(
 
     let broadcaster = {
         thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Could not build tokio runtime");
-
-            rt.block_on(async {
-                let make_service = make_service_fn(move |_| {
-                    let static_root = static_root.clone();
-                    let base_path = base_path.clone();
-
-                    async {
-                        Ok::<_, hyper::Error>(service_fn(move |req| {
-                            response_error_injector(handle_request(
-                                req,
-                                static_root.clone(),
-                                base_path.clone(),
-                            ))
-                        }))
-                    }
-                });
-
-                let server = Server::bind(&bind_address).serve(make_service);
-
-                println!(
-                    "Web server is available at {} (bound to {})\n",
-                    &constructed_base_url, &bind_address
-                );
-                if open {
-                    if let Err(err) = open::that(&constructed_base_url) {
-                        eprintln!("Failed to open URL in your browser: {}", err);
-                    }
-                }
-
-                server.await.expect("Could not start web server");
-            });
+            let server = Server::http(bind_address).unwrap();
+            println!("listening: {:?}", bind_address);
+            for request in server.incoming_requests() {
+                handle_request(request, static_root.clone(), base_path.clone());
+            }
         });
 
         // The websocket for livereload
