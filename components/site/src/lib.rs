@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use libs::once_cell::sync::Lazy;
-use libs::rayon::prelude::*;
 use libs::tera::{Context, Tera};
 use libs::walkdir::{DirEntry, WalkDir};
 
@@ -388,7 +387,7 @@ impl Site {
             .pages
             .values_mut()
             .collect::<Vec<_>>()
-            .par_iter_mut()
+            .iter_mut()
             .map(|page| {
                 let insert_anchor = pages_insert_anchors[&page.file.path];
                 page.render_markdown(
@@ -405,7 +404,7 @@ impl Site {
             .sections
             .values_mut()
             .collect::<Vec<_>>()
-            .par_iter_mut()
+            .iter_mut()
             .map(|section| {
                 section.render_markdown(permalinks, tera, config, &self.shortcode_definitions)
             })
@@ -834,7 +833,7 @@ impl Site {
         let library = self.library.read().unwrap();
         taxonomy
             .items
-            .par_iter()
+            .iter()
             .map(|item| {
                 let mut comp = components.clone();
                 comp.push(&item.slug);
@@ -1000,7 +999,7 @@ impl Site {
         if render_pages {
             section
                 .pages
-                .par_iter()
+                .iter()
                 .map(|k| self.render_page(self.library.read().unwrap().pages.get(k).unwrap()))
                 .collect::<Result<()>>()?;
         }
@@ -1045,7 +1044,7 @@ impl Site {
             .read()
             .unwrap()
             .sections
-            .par_iter()
+            .iter()
             .map(|(_, s)| self.render_section(s, true))
             .collect::<Result<()>>()
     }
@@ -1070,7 +1069,7 @@ impl Site {
 
         paginator
             .pagers
-            .par_iter()
+            .iter()
             .map(|pager| {
                 let mut pager_components = index_components.clone();
                 pager_components.push(&paginator.paginate_path);

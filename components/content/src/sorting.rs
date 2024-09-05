@@ -3,13 +3,12 @@ use std::path::PathBuf;
 
 use crate::{Page, SortBy};
 use libs::lexical_sort::natural_lexical_cmp;
-use libs::rayon::prelude::*;
 
 /// Sort by the field picked by the function.
 /// The pages permalinks are used to break the ties
 pub fn sort_pages(pages: &[&Page], sort_by: SortBy) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let (mut can_be_sorted, cannot_be_sorted): (Vec<&Page>, Vec<_>) =
-        pages.par_iter().partition(|page| match sort_by {
+        pages.iter().partition(|page| match sort_by {
             SortBy::Date => page.meta.datetime.is_some(),
             SortBy::UpdateDate => {
                 page.meta.datetime.is_some() || page.meta.updated_datetime.is_some()
@@ -20,7 +19,7 @@ pub fn sort_pages(pages: &[&Page], sort_by: SortBy) -> (Vec<PathBuf>, Vec<PathBu
             SortBy::None => unreachable!(),
         });
 
-    can_be_sorted.par_sort_unstable_by(|a, b| {
+    can_be_sorted.sort_unstable_by(|a, b| {
         let ord = match sort_by {
             SortBy::Date => b.meta.datetime.unwrap().cmp(&a.meta.datetime.unwrap()),
             SortBy::UpdateDate => std::cmp::max(b.meta.datetime, b.meta.updated_datetime)

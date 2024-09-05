@@ -1,7 +1,6 @@
 use std::cmp::Ordering;
 use std::path::PathBuf;
 
-use libs::rayon::prelude::*;
 use libs::tera::Context;
 use serde::Serialize;
 
@@ -41,7 +40,7 @@ pub fn render_feeds(
         return Ok(None);
     }
 
-    pages.par_sort_unstable_by(|a, b| {
+    pages.sort_unstable_by(|a, b| {
         let ord = b.meta.datetime.unwrap().cmp(&a.meta.datetime.unwrap());
         if ord == Ordering::Equal {
             a.permalink.cmp(&b.permalink)
