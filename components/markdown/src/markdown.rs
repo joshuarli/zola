@@ -512,38 +512,6 @@ pub fn markdown_to_html(
 
                     render_shortcodes!(true, text, range);
                 }
-                Event::Start(Tag::Image { link_type, dest_url, title, id }) => {
-                    let link = if is_colocated_asset_link(&dest_url) {
-                        let link = format!("{}{}", context.current_page_permalink, &*dest_url);
-                        link.into()
-                    } else {
-                        dest_url
-                    };
-
-                    events.push(if lazy_async_image {
-                        let mut img_before_alt: String = "<img src=\"".to_string();
-                        cmark_escape::escape_href(&mut img_before_alt, &link)
-                            .expect("Could not write to buffer");
-                        if !title.is_empty() {
-                            img_before_alt
-                                .write_str("\" title=\"")
-                                .expect("Could not write to buffer");
-                            cmark_escape::escape_href(&mut img_before_alt, &title)
-                                .expect("Could not write to buffer");
-                        }
-                        img_before_alt.write_str("\" alt=\"").expect("Could not write to buffer");
-                        inside_attribute = true;
-                        Event::Html(img_before_alt.into())
-                    } else {
-                        inside_attribute = false;
-                        Event::Start(Tag::Image { link_type, dest_url: link, title, id })
-                    });
-                }
-                Event::End(TagEnd::Image) => events.push(if lazy_async_image {
-                    Event::Html("\" loading=\"lazy\" decoding=\"async\" />".into())
-                } else {
-                    event
-                }),
                 Event::Start(Tag::Link { link_type, dest_url, title, id })
                     if dest_url.is_empty() =>
                 {

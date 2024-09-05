@@ -37,4 +37,3 @@ pub use unic_langid;
 pub use unicode_segmentation;
 pub use url;
 pub use walkdir;
-pub use webp;
