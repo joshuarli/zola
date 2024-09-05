@@ -177,13 +177,8 @@ fn fix_link(
                     link,
                     context.current_page_path.unwrap_or("unknown"),
                 );
-                match context.config.link_checker.internal_level {
-                    config::LinkCheckerLevel::Error => bail!(msg),
-                    config::LinkCheckerLevel::Warn => {
-                        console::warn(&msg);
-                        link.to_string()
-                    }
-                }
+                console::warn(&msg);
+                bail!(msg);
             }
         }
     } else if is_colocated_asset_link(link) {

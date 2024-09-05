@@ -28,7 +28,6 @@ pub use quickxml_to_serde;
 pub use rayon;
 pub use regex;
 pub use relative_path;
-pub use reqwest;
 pub use serde_json;
 pub use serde_yaml;
 pub use sha2;

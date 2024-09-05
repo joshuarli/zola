@@ -119,18 +119,6 @@ fn main() {
                 std::process::exit(1);
             }
         }
-        Command::Check { drafts } => {
-            console::info("Checking site...");
-            let start = Instant::now();
-            let (root_dir, config_file) = get_config_file_path(&cli_dir, &cli.config);
-            match cmd::check(&root_dir, &config_file, None, None, drafts) {
-                Ok(()) => messages::report_elapsed_time(start),
-                Err(e) => {
-                    messages::unravel_errors("Failed to check the site", &e);
-                    std::process::exit(1);
-                }
-            }
-        }
         Command::Completion { shell } => {
             let cmd = &mut Cli::command();
             clap_complete::generate(shell, cmd, cmd.get_name().to_string(), &mut std::io::stdout());

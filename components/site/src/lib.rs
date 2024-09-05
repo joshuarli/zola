@@ -1,5 +1,4 @@
 pub mod feeds;
-pub mod link_checking;
 mod minify;
 pub mod sass;
 pub mod sitemap;
@@ -321,48 +320,6 @@ impl Site {
             lib.fill_backlinks();
         }
         tpls::register_tera_global_fns(self);
-
-        // Needs to be done after rendering markdown as we only get the anchors at that point
-        let internal_link_messages = link_checking::check_internal_links_with_anchors(self);
-
-        // log any broken internal links and error out if needed
-        if !internal_link_messages.is_empty() {
-            let messages: Vec<String> = internal_link_messages
-                .iter()
-                .enumerate()
-                .map(|(i, msg)| format!("  {}. {}", i + 1, msg))
-                .collect();
-            let msg = format!(
-                "Found {} broken internal anchor link(s)\n{}",
-                messages.len(),
-                messages.join("\n")
-            );
-            match self.config.link_checker.internal_level {
-                config::LinkCheckerLevel::Warn => console::warn(&msg),
-                config::LinkCheckerLevel::Error => return Err(anyhow!(msg)),
-            }
-        }
-
-        // check external links, log the results, and error out if needed
-        if self.config.is_in_check_mode() {
-            let external_link_messages = link_checking::check_external_links(self);
-            if !external_link_messages.is_empty() {
-                let messages: Vec<String> = external_link_messages
-                    .iter()
-                    .enumerate()
-                    .map(|(i, msg)| format!("  {}. {}", i + 1, msg))
-                    .collect();
-                let msg = format!(
-                    "Found {} broken external link(s)\n{}",
-                    messages.len(),
-                    messages.join("\n")
-                );
-                match self.config.link_checker.external_level {
-                    config::LinkCheckerLevel::Warn => console::warn(&msg),
-                    config::LinkCheckerLevel::Error => return Err(anyhow!(msg)),
-                }
-            }
-        }
 
         Ok(())
     }

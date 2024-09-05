@@ -16,22 +16,6 @@ pub fn notify_site_size(site: &Site) {
     );
 }
 
-/// Display in the console only the number of pages/sections in the site
-pub fn check_site_summary(site: &Site) {
-    let library = site.library.read().unwrap();
-    let orphans = library.get_all_orphan_pages();
-    println!(
-        "-> Site content: {} pages ({} orphan), {} sections",
-        library.pages.len(),
-        orphans.len(),
-        library.sections.len() - 1, // -1 since we do not count the index as a section there
-    );
-
-    for orphan in orphans {
-        console::warn(&format!("Orphan page found: {}", orphan.path));
-    }
-}
-
 /// Display a warning in the console if there are ignored pages in the site
 pub fn warn_about_ignored_pages(site: &Site) {
     let library = site.library.read().unwrap();

@@ -91,13 +91,6 @@ pub enum Command {
         no_port_append: bool,
     },
 
-    /// Try to build the project without rendering it. Checks links
-    Check {
-        /// Include drafts when loading the site
-        #[clap(long)]
-        drafts: bool,
-    },
-
     /// Generate shell completion
     Completion {
         /// Shell to generate completion for

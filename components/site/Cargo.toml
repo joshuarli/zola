@@ -15,7 +15,6 @@ utils = { path = "../utils" }
 templates = { path = "../templates" }
 search = { path = "../search" }
 imageproc = { path = "../imageproc" }
-link_checker = { path = "../link_checker" }
 libs = { path = "../libs" }
 content = { path = "../content" }
 

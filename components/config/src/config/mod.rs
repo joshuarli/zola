@@ -1,5 +1,4 @@
 pub mod languages;
-pub mod link_checker;
 pub mod markup;
 pub mod search;
 pub mod slugify;
@@ -89,7 +88,6 @@ pub struct Config {
     /// Whether dotfiles inside the output directory are preserved when rebuilding the site
     pub preserve_dotfiles_in_output: bool,
 
-    pub link_checker: link_checker::LinkChecker,
     /// The setup for which slugification strategies to use for paths, taxonomies and anchors
     pub slugify: slugify::Slugify,
     /// The search config, telling what to include in the search index
@@ -146,7 +144,6 @@ impl Config {
 
         config.add_default_language()?;
         config.slugify_taxonomies();
-        config.link_checker.resolve_globset()?;
 
         let content_glob_set = build_ignore_glob_set(&config.ignored_content, "content")?;
         config.ignored_content_globset = Some(content_glob_set);
@@ -283,18 +280,8 @@ impl Config {
         !self.other_languages().is_empty()
     }
 
-    pub fn is_in_check_mode(&self) -> bool {
-        self.mode == Mode::Check
-    }
-
     pub fn enable_serve_mode(&mut self) {
         self.mode = Mode::Serve;
-    }
-
-    pub fn enable_check_mode(&mut self) {
-        self.mode = Mode::Check;
-        // Disable syntax highlighting since the results won't be used and it is slow
-        self.markdown.highlight_code = false;
     }
 
     pub fn get_translation(&self, lang: &str, key: &str) -> Result<String> {
@@ -398,7 +385,6 @@ impl Default for Config {
             translations: HashMap::new(),
             output_dir: "public".to_string(),
             preserve_dotfiles_in_output: false,
-            link_checker: link_checker::LinkChecker::default(),
             slugify: slugify::Slugify::default(),
             search: search::Search::default(),
             markdown: markup::Markdown::default(),
@@ -693,30 +679,6 @@ ignored_static = []
     }
 
     #[test]
-    fn missing_link_checker_ignored_files_results_in_empty_vector() {
-        let config_str = r#"
-title = "My site"
-base_url = "example.com"
-        "#;
-
-        let config = Config::parse(config_str).unwrap();
-        assert_eq!(config.link_checker.ignored_files.len(), 0);
-    }
-
-    #[test]
-    fn empty_link_checker_ignored_files_results_in_empty_vector() {
-        let config_str = r#"
-title = "My site"
-base_url = "example.com"
-[link_checker]
-ignored_files = []
-        "#;
-
-        let config = Config::parse(config_str).unwrap();
-        assert_eq!(config.link_checker.ignored_files.len(), 0);
-    }
-
-    #[test]
     fn non_empty_ignored_content_results_in_vector_of_patterns_and_configured_globset() {
         let config_str = r#"
 title = "My site"
@@ -772,76 +734,6 @@ ignored_static = ["*.{graphml,iso}", "*.py?", "**/{target,temp_folder}"]
         assert!(g.is_match("temp_folder"));
         assert!(g.is_match("my/isos/foo.iso"));
         assert!(g.is_match("content/poetry/zen.py2"));
-    }
-
-    #[test]
-    fn non_empty_link_checker_ignored_pages_results_in_vector_of_patterns_and_configured_globset() {
-        let config_str = r#"
-title = "My site"
-base_url = "example.com"
-[link_checker]
-ignored_files = ["*.{graphml,iso}", "*.py?", "**/{target,temp_folder}"]
-        "#;
-
-        let config = Config::parse(config_str).unwrap();
-        let v = config.link_checker.ignored_files;
-        assert_eq!(v, vec!["*.{graphml,iso}", "*.py?", "**/{target,temp_folder}"]);
-
-        let g = config.link_checker.ignored_files_globset.unwrap();
-        assert_eq!(g.len(), 3);
-        assert!(g.is_match("foo.graphml"));
-        assert!(g.is_match("foo/bar/foo.graphml"));
-        assert!(g.is_match("foo.iso"));
-        assert!(!g.is_match("foo.png"));
-        assert!(g.is_match("foo.py2"));
-        assert!(g.is_match("foo.py3"));
-        assert!(!g.is_match("foo.py"));
-        assert!(g.is_match("foo/bar/target"));
-        assert!(g.is_match("foo/bar/baz/temp_folder"));
-        assert!(g.is_match("foo/bar/baz/temp_folder/target"));
-        assert!(g.is_match("temp_folder"));
-        assert!(g.is_match("my/isos/foo.iso"));
-        assert!(g.is_match("content/poetry/zen.py2"));
-    }
-
-    #[test]
-    fn link_checker_skip_anchor_prefixes() {
-        let config_str = r#"
-title = "My site"
-base_url = "example.com"
-
-[link_checker]
-skip_anchor_prefixes = [
-    "https://caniuse.com/#feat=",
-    "https://github.com/rust-lang/rust/blob/",
-]
-        "#;
-
-        let config = Config::parse(config_str).unwrap();
-        assert_eq!(
-            config.link_checker.skip_anchor_prefixes,
-            vec!["https://caniuse.com/#feat=", "https://github.com/rust-lang/rust/blob/"]
-        );
-    }
-
-    #[test]
-    fn link_checker_skip_prefixes() {
-        let config_str = r#"
-title = "My site"
-base_url = "example.com"
-
-[link_checker]
-skip_prefixes = [
-    "http://[2001:db8::]/",
-    "https://www.example.com/path",
-]
-        "#;
-
-        let config = Config::parse(config_str).unwrap();
-        assert_eq!(
-            config.link_checker.skip_prefixes,
-            vec!["http://[2001:db8::]/", "https://www.example.com/path",]
-        );
     }
 
     #[test]

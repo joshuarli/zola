@@ -811,47 +811,6 @@ fn can_get_hash_for_static_files() {
 }
 
 #[test]
-fn can_check_site() {
-    let (mut site, _tmp_dir, _public) = build_site("test_site");
-
-    assert_eq!(
-        site.config.link_checker.skip_anchor_prefixes,
-        vec!["https://github.com/rust-lang/rust/blob/"]
-    );
-    assert_eq!(
-        site.config.link_checker.skip_prefixes,
-        vec!["http://[2001:db8::]/", "http://invaliddomain"]
-    );
-
-    site.config.enable_check_mode();
-    site.load().expect("link check test_site");
-}
-
-#[test]
-#[should_panic]
-fn panics_on_invalid_external_domain() {
-    let (mut site, _tmp_dir, _public) = build_site("test_site");
-
-    // remove the invalid domain skip prefix
-    let i = site
-        .config
-        .link_checker
-        .skip_prefixes
-        .iter()
-        .position(|prefix| prefix == "http://invaliddomain")
-        .unwrap();
-    site.config.link_checker.skip_prefixes.remove(i);
-
-    // confirm the invalid domain skip prefix was removed
-    assert_eq!(site.config.link_checker.skip_prefixes, vec!["http://[2001:db8::]/"]);
-
-    // check the test site, this time without the invalid domain skip prefix, which should cause a
-    // panic
-    site.config.enable_check_mode();
-    site.load().expect("link check test_site");
-}
-
-#[test]
 fn can_find_site_and_page_authors() {
     let mut path = env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
     path.push("test_site");
