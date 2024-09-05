@@ -1,5 +1,4 @@
 pub mod feeds;
-mod minify;
 pub mod sass;
 pub mod sitemap;
 pub mod tpls;
@@ -7,7 +6,7 @@ pub mod tpls;
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 
 use libs::once_cell::sync::Lazy;
 use libs::rayon::prelude::*;
@@ -46,7 +45,6 @@ pub struct Site {
     /// The parsed config for the site
     pub config: Config,
     pub tera: Tera,
-    imageproc: Arc<Mutex<imageproc::Processor>>,
     // the live reload port to be used if there is one
     pub live_reload: Option<u16>,
     pub output_path: PathBuf,
@@ -86,14 +84,12 @@ impl Site {
         let sass_path = path.join("sass");
         let static_path = path.join("static");
         let templates_path = path.join("templates");
-        let imageproc = imageproc::Processor::new(path.to_path_buf(), &config);
         let output_path = path.join(config.output_dir.clone());
 
         let site = Site {
             base_path: path.to_path_buf(),
             config,
             tera,
-            imageproc: Arc::new(Mutex::new(imageproc)),
             live_reload: None,
             output_path,
             content_path,
@@ -156,8 +152,6 @@ impl Site {
 
     pub fn set_base_url(&mut self, base_url: String) {
         self.config.base_url = base_url;
-        let mut imageproc = self.imageproc.lock().expect("Couldn't lock imageproc (set_base_url)");
-        imageproc.set_base_url(&self.config);
     }
 
     pub fn set_output_path<P: AsRef<Path>>(&mut self, path: P) {
@@ -574,18 +568,6 @@ impl Site {
         Ok(())
     }
 
-    pub fn num_img_ops(&self) -> usize {
-        let imageproc = self.imageproc.lock().expect("Couldn't lock imageproc (num_img_ops)");
-        imageproc.num_img_ops()
-    }
-
-    pub fn process_images(&self) -> Result<()> {
-        let mut imageproc =
-            self.imageproc.lock().expect("Couldn't lock imageproc (process_images)");
-        imageproc.prune()?;
-        imageproc.do_process()
-    }
-
     /// Deletes the `public` directory if it exists and the `preserve_dotfiles_in_output` option is set to false,
     /// or if set to true: its contents except for the dotfiles at the root level.
     pub fn clean(&self) -> Result<()> {
@@ -607,25 +589,16 @@ impl Site {
             site_path.push(component);
         }
 
-        let final_content = if !filename.ends_with("html") || !self.config.minify_html {
-            content
-        } else {
-            match minify::html(content) {
-                Ok(minified_content) => minified_content,
-                Err(error) => bail!(error),
-            }
-        };
-
         match self.build_mode {
             BuildMode::Disk => {
                 let end_path = current_path.join(filename);
-                create_file(&end_path, &final_content)?;
+                create_file(&end_path, &content)?;
             }
             BuildMode::Memory => {
                 let site_path =
                     if filename != "index.html" { site_path.join(filename) } else { site_path };
 
-                SITE_CONTENT.write().unwrap().insert(site_path, final_content);
+                SITE_CONTENT.write().unwrap().insert(site_path, content);
             }
         }
 
@@ -734,11 +707,6 @@ impl Site {
         }
         self.render_taxonomies()?;
         start = log_time(start, "Rendered taxonomies");
-        // We process images at the end as we might have picked up images to process from markdown
-        // or from templates
-        self.process_images()?;
-        start = log_time(start, "Processed images");
-        // Processed images will be in static so the last step is to copy it
         self.copy_static_directories()?;
         log_time(start, "Copied static dir");
 

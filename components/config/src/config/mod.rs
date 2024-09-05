@@ -63,8 +63,6 @@ pub struct Config {
 
     /// Whether to compile the `sass` directory and output the css files into the static folder
     pub compile_sass: bool,
-    /// Whether to minify the html output
-    pub minify_html: bool,
     /// Whether to build the search index for the content
     pub build_search_index: bool,
     /// A list of file glob patterns to ignore when processing the content folder. Defaults to none.
@@ -375,7 +373,6 @@ impl Default for Config {
             taxonomies: Vec::new(),
             author: None,
             compile_sass: false,
-            minify_html: false,
             mode: Mode::Build,
             build_search_index: false,
             ignored_content: Vec::new(),
