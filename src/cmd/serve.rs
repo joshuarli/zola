@@ -88,8 +88,6 @@ fn handle_request(
 
     let trimmed_path = &path_str[base_path.len() - 1..];
 
-    let original_root = root.clone();
-    let mut path = RelativePathBuf::new();
     // https://zola.discourse.group/t/percent-encoding-for-slugs/736
     let decoded = match percent_encoding::percent_decode_str(trimmed_path).decode_utf8() {
         Ok(d) => d,
@@ -106,12 +104,7 @@ fn handle_request(
         decoded.to_string()
     };
 
-    for c in decoded_path.split('/') {
-        path.push(c);
-    }
-
-    // livereload.js is served using the LIVE_RELOAD str, not a file
-    if path == "livereload.js" {
+    if decoded_path.starts_with("/livereload.js") {
         if *req.method() == Method::Get {
             req.respond(
                 Response::from_string(LIVE_RELOAD)
@@ -124,7 +117,13 @@ fn handle_request(
         return;
     }
 
-    if let Some(content) = SITE_CONTENT.read().unwrap().get(&path) {
+    // strip anything beyond ?; we only serve files
+    // livereload.js will send some requests with a timestamp query
+    // we just send the file, we're not a full livereload server
+    let (decoded_file_path, _) = decoded_path.rsplit_once('?').unwrap_or((&decoded_path, ""));
+
+    /*
+    if let Some(content) = SITE_CONTENT.read().unwrap().get(&decoded_path) {
         let content_type = match path.extension() {
             Some(ext) => match ext {
                 "xml" => "text/xml",
@@ -144,6 +143,7 @@ fn handle_request(
         ).expect("Could not send in-memory response");
         return;
     }
+    */
 
     // Handle only `GET`/`HEAD` requests
     match *req.method() {
@@ -154,31 +154,25 @@ fn handle_request(
         }
     }
 
-    // Handle only simple path requests
-    /*
-    if req.url().scheme_str().is_some() || req.url().host().is_some() {
-        req.respond(Response::empty(StatusCode(404)));
-        return;
-    }
-    */
+    let original_root = root.clone();
 
     // Remove the first slash from the request path
     // otherwise `PathBuf` will interpret it as an absolute path
-    root.push(&decoded[1..]);
+    root.push(&decoded_file_path[1..]);
 
     // Resolve the root + user supplied path into the absolute path
     // this should hopefully remove any path traversals
     // if we fail to resolve path, we should return 404
     root = match fs::canonicalize(&root) {
         Ok(d) => d,
-        Err(_) => {
+        Err(e) => {
             req.respond(Response::empty(StatusCode(404)));
             return;
         }
     };
 
     // Ensure we are only looking for things in our public folder
-    if !root.starts_with(original_root) {
+    if !root.starts_with(&original_root) {
         req.respond(Response::empty(StatusCode(404)));
         return;
     }
